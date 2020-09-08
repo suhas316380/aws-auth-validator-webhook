@@ -49,7 +49,7 @@ This project will help you setup a validation webhook to validate aws-auth confi
 5. **CREATE** or **UPDATE** operation:
     - When a CREATE or UPDATE operation is made on the aws-auth CM, the Pod makes "describe_instances" AWS API calls to get a list of Worker nodes and their IAM Instance profiles. The     instances are filtered based on the tags. Name=kubernetes.io/cluster/<cluster_name> ; Value: owned. The CLUSTER_NAME and CLUSTER_REGION variables are passed to the deployment and  these values are used to make the API calls.
     - Then a "get_instance_profile" AWS API call is made to get the IAM roles associated with the instance profile
-    - Any additional comma saperated IAM Roles/Users specified via ADDITIONAL_ROLES environment variables are stored into a list (list A)
+    - Any additional comma saperated IAM Roles/Users specified via ADDITIONAL_ROLES environment variables are stored into a list (list A) along with the worker node IAM roles
     - The intercepted request is checked for the Data section of the configMap and mapRoles section is parsed and the ARNs are extracted to another list (List B)
     - Checks to make sure that all the elements in List A are present in List B. Otherwise, the request is rejected.
     - "TESTING" environment varialbe can be set via the deployment. Possible values: "True or False". Default value: True
