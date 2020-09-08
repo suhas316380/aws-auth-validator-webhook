@@ -11,7 +11,7 @@ This project will help you setup a validation webhook to validate aws-auth confi
 ### Highlights
 ##### What can the webhook do:
 - configMap with empty data is not allowed. This applies for CREATE and UPDATE operation
-- At a minimum, configMap should have IAM roles associated with the IAM Instance profiles attached to the worker nodes should be present in the aws-auth in addition to any IAM roles/users specified as a comma saperated string via the ADDITIONAL_ROLES environment variable in the deployment. This applies for CREATE and UPDATE operation
+- At a minimum, IAM roles associated with the IAM Instance profiles attached to the worker nodes should be present in the aws-auth in addition to any IAM roles/users specified as a comma saperated string via the ADDITIONAL_ROLES environment variable in the deployment. This applies for CREATE and UPDATE operation
 - DELETE operation is not allowed on aws-auth configMap 
 - When a request is denied, the reason should be displayed on the terminal.
 - More verbose logging should be available in the Pod logs
