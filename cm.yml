@@ -1,0 +1,38 @@
+apiVersion: v1
+data:
+  mapRoles: |
+    - groups:
+      - system:bootstrappers
+      - system:nodes
+      rolearn: arn:aws:iam::1234567:role/eksctl-training-nodegroup-ng-21b0-NodeInstanceRole-11ZODIU68HRQB
+      username: system:node:{{EC2PrivateDNSName}}
+    - groups:
+      - system:bootstrappers
+      - system:nodes
+      - system:node-proxier
+      rolearn: arn:aws:iam::1234567:role/AmazonEKSFargatePodExecutionRole
+      username: system:node:{{SessionName}}
+  mapUsers: |
+    - userarn: arn:aws:iam::555555555555:user/admin
+      username: admin
+      groups:
+        - system:masters
+    - userarn: arn:aws:iam::111122223333:user/ops-user
+      username: ops-user
+      groups:
+        - system:masters
+kind: ConfigMap
+metadata:
+  name: aws-auth-1
+  namespace: kube-system
+  labels:
+    name: aws-auth
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test-1
+  namespace: kube-system
+  labels:
+    name: aws-auth
+data:
