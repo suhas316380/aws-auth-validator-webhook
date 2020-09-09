@@ -5,7 +5,9 @@
             "Sid": "VisualEditor0",
             "Effect": "Allow",
             "Action": [
+                "eks:ListFargateProfiles",
                 "ec2:DescribeInstances",
+                "eks:DescribeFargateProfile",
                 "iam:GetInstanceProfile"
             ],
             "Resource": "*"

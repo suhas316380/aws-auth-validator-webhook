@@ -1,6 +1,8 @@
 from flask import Flask, request, jsonify
 import logging
 import boto3
+from botocore.config import Config
+from botocore.session import Session
 import os
 import re
 admission_controller = Flask(__name__)
@@ -82,9 +84,13 @@ def deployment_webhook():
 
             ############################## AWS API Calls Section Begin ##############################
 
+            # https://boto3.amazonaws.com/v1/documentation/api/latest/guide/retries.html
+            config=Config(connect_timeout=5, read_timeout=60, retries={'max_attempts': 3})
+            
+
             # Get the instances associated with a Cluster and query for IAM Instance Profile
             # Get the instances which have the Tag key - kubernetes.io/cluster/<cluster_name> with value "owned"
-            ec2_client = boto3.client('ec2', CLUSTER_REGION)
+            ec2_client = boto3.client('ec2', CLUSTER_REGION, config=config)
             instanceProfilesList=[]
             try:
                 ec2_response = ec2_client.describe_instances(
@@ -104,6 +110,7 @@ def deployment_webhook():
                     instanceProfilesList.append(instanceProfile)
             except Exception as ec2_error:
                 admission_controller.logger.error(f"Error while trying to get the EC2 Instance profile(s) associated with the worker node(s): {ec2_error}")
+                return admission_response(False, "Error while trying to get the EC2 Instance profile(s) associated with the worker node(s): {}".format(ec2_error))
 
             instanceProfiles = list(set(instanceProfilesList))
             admission_controller.logger.info(f"IAM Instance profiles associated with the worker nodes are: {instanceProfiles}")
@@ -112,7 +119,7 @@ def deployment_webhook():
             # Sources:
             # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/iam.html#IAM.Client.get_instance_profile
             # https://docs.aws.amazon.com/cli/latest/reference/iam/get-instance-profile.html
-            iam_client = boto3.client('iam')
+            iam_client = boto3.client('iam', config=config)
             iamRolesList=[]
             try:
                 for iam in instanceProfiles:
@@ -123,15 +130,53 @@ def deployment_webhook():
                     iamRole = str(k['Arn'])
                     iamRolesList.append(iamRole)
             except Exception as iam_error:
-               admission_controller.logger.error(f"Error while trying to get the IAM Role of the EC2 Instance profile(s): {iam_error}") 
+               admission_controller.logger.error(f"Error while trying to get the IAM Role of the EC2 Instance profile(s): {iam_error}")
+               return admission_response(False, "Error while trying to get the IAM Role of the EC2 Instance profile(s): {}".format(iam_error))
 
             # Do not fail if there are no Roles - Accounting for Fargate nodes
             iamRoles = list(set(iamRolesList))
             admission_controller.logger.info(f"IAM roles associated with the worker nodes are: {iamRoles}")    
 
+            # Logic to list Fargate profile
+            fargate_client = boto3.client('eks', CLUSTER_REGION, config=config)
+            fargateProfilesList=[]
+            try:
+                fargate_response = fargate_client.list_fargate_profiles(
+                    clusterName = CLUSTER_NAME,
+                )
+                if fargate_response['fargateProfileNames'] is not None:
+                    for i in fargate_response['fargateProfileNames']:
+                        fargateProfilesList.append(i)
+
+            except Exception as fargate_list_error:
+               admission_controller.logger.error(f"Error while trying to get the list of fargate profiles: {fargate_list_error}")
+               return admission_response(False, "Error while trying to get the list of fargate profiles: {}".format(fargate_list_error))                 
+
+            fargateProfilesList = list(filter(None, fargateProfilesList))
+            fargateProfiles = set(fargateProfilesList)
+            admission_controller.logger.info(f"Fargate profiles associated with the cluster are: {fargateProfiles}")
+
+            # Logic to describe Fargate profile
+            fargateRolesList=[]
+            if fargateProfiles is not None:
+                try:
+                    for profile in fargateProfiles:
+                    
+                      fargate_describe_response = fargate_client.describe_fargate_profile(
+                          clusterName = CLUSTER_NAME,
+                          fargateProfileName = profile
+                      )
+                      fargateRolesList.append(str(fargate_describe_response['fargateProfile']['podExecutionRoleArn']))
+                except Exception as fargate_describe_error:
+                    admission_controller.logger.error(f"Error while trying to describe the fargate profiles: {fargate_describe_error}")
+                    return admission_response(False, "Error while trying to describe the fargate profiles: {}".format(fargate_describe_error))   
+
+            fargateRoles = list(set(fargateRolesList))
+            admission_controller.logger.info(f"Fargate profiles associated with the cluster are: {fargateRoles}")
+
             ############################## AWS API Calls Section End ##############################
 
-            final_roles = iamRoles + ADDITIONAL_ROLES
+            final_roles = iamRoles + ADDITIONAL_ROLES + fargateRoles
             final_roles = list(filter(None, final_roles))
             aws_auth_arns = re.findall(r'(?:^|\s)(arn:aws:iam::\S*)',data)
             admission_controller.logger.info(f"Extracted ARNs from the aws-auth configMap Data section: {aws_auth_arns}")
@@ -142,7 +187,7 @@ def deployment_webhook():
                 else:
                     admission_controller.logger.error(f"\n{role} entry not found in configMap data mapRoles section \n")
                     admission_controller.logger.info(f"\nMake sure that {final_roles} entry/entries are added in configMap data mapRoles section \n")
-                    return admission_response(False, "All the roles not found in the aws-auth configMap..Check Pod logs for more information")
+                    return admission_response(False, "\n\nAll the roles not found in the aws-auth configMap.Make sure to add {} entry/entries are added in configMap data mapRoles section".format(final_roles))
             return admission_response(True, data)
     
     # Delete operation not allowed
@@ -163,3 +208,4 @@ def hello():
 if __name__ == '__main__':
     admission_controller.run(host='0.0.0.0')
     #admission_controller.run(host='0.0.0.0', port=443, ssl_context=("/etc/webhook/certs/cert.pem", "/etc/webhook/certs/key.pem"))
+
