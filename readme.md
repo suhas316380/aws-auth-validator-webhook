@@ -27,7 +27,7 @@ This project will help you setup a validation webhook to validate aws-auth confi
 
 ### Explaination
 
-1. The **ValidatingWebhookConfiguration** has the following namespace and Object selectors and hence namespace with label `name=kube-system` and objects with label `name=kubesystem` are processed by the webhook.:
+1. The **ValidatingWebhookConfiguration** has the following namespace and Object selectors and hence namespace with label `name=kube-system` and objects with label `name=kube-system` are processed by the webhook.:
 ```
   namespaceSelector:
     matchExpressions:
@@ -82,7 +82,7 @@ This project will help you setup a validation webhook to validate aws-auth confi
     - **Test case 3**: DELETE operation is not allowed on aws-auth configMap 
     - **Test case 4**: When a request is denied, the reason should be displayed on the terminal.
     - **Test case 5**: More verbose logging should be available in the Pod logs: kubectl logs -n kube-system -l app=aws-auth-validator -f
-6. PRODUCTION - Apply the label to the aws-auth to make sure that it's detected by the webhook
+6. **PRODUCTION** - Apply the label to the aws-auth to make sure that it's detected by the webhook
     - `kubectl -n kube-system label cm aws-auth name=aws-auth`
 
 
