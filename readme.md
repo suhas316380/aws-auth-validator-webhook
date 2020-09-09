@@ -11,7 +11,8 @@ This project will help you setup a validation webhook to validate aws-auth confi
 ### Highlights
 ##### What can the webhook do:
 - configMap with empty data is not allowed. This applies for CREATE and UPDATE operation
-- At a minimum, IAM roles associated with the IAM Instance profiles attached to the worker nodes should be present in the aws-auth in addition to any IAM roles/users specified as a comma saperated string via the ADDITIONAL_ROLES environment variable in the deployment. This applies for CREATE and UPDATE operation
+- At a minimum, IAM roles associated with the IAM Instance profiles attached to the worker nodes should be present in the aws-auth in addition to any IAM roles/users specified as a comma saperated string via the ADDITIONAL_ROLES environment variable in the deployment. This applies for CREATE and UPDATE operation. Fargate roles are also accounted for and checks are performed to make sure that they are present in aws-auth
+- Has an option to reject roles based on the values specified to REJECT_ROLES environment. This is useful in cases where a specific user/Role should be denied access. This is particularyly useful in cases where cluster creator should not be defined in aws-auth as best practice. REJECT_ROLES env variable accepts comma-separated values. 
 - DELETE operation is not allowed on aws-auth configMap 
 - When a request is denied, the reason should be displayed on the terminal.
 - More verbose logging should be available in the Pod logs
@@ -47,8 +48,10 @@ This project will help you setup a validation webhook to validate aws-auth confi
     - Creates IAM Service Account and attaches the IAM policy.
 4. The webhook can intercept **CREATE**, **UPDATE** and **DELETE** operations. Additional configuration for webhook are passed via the environment variables.
 5. **CREATE** or **UPDATE** operation:
-    - When a CREATE or UPDATE operation is made on the aws-auth CM, the Pod makes "describe_instances" AWS API calls to get a list of Worker nodes and their IAM Instance profiles. The     instances are filtered based on the tags. Name=kubernetes.io/cluster/<cluster_name> ; Value: owned. The CLUSTER_NAME and CLUSTER_REGION variables are passed to the deployment and  these values are used to make the API calls.
+    - IAM Roles defined via REJECT_ROLES environment variable in the Deployment will not be allowed in the aws-auth. This is particularyly useful in cases where cluster creator should not be defined in aws-auth as best practice. REJECT_ROLES env variable accepts comma-separated values. 
+    - When a CREATE or UPDATE operation is made on the aws-auth CM, the Pod makes "describe_instances" AWS API calls to get a list of Worker nodes (if there are large number of worker nodes, pagination is accounted for when making "describe_instances". Also consider increasing timeout value in the webhook config manifest.yaml) and their IAM Instance profiles. The instances are filtered based on the tags. Name=kubernetes.io/cluster/<cluster_name> ; Value: owned. The CLUSTER_NAME and CLUSTER_REGION variables are passed to the deployment and  these values are used to make the API calls.
     - Then a "get_instance_profile" AWS API call is made to get the IAM roles associated with the instance profile
+    - Then a "list_fargate_profiles" call is made to get any fargate profiles associated with the cluster. If there are any Fargate profiles associated with the cluster, "describe_fargate_profile" API call is made to get the PodExecutionRoleArn and is stored in the list A. This ensures that Fargate Roles are also accounted for
     - Any additional comma saperated IAM Roles/Users specified via ADDITIONAL_ROLES environment variables are stored into a list (list A) along with the worker node IAM roles
     - The intercepted request is checked for the Data section of the configMap and mapRoles section is parsed and the ARNs are extracted to another list (List B)
     - Checks to make sure that all the elements in List A are present in List B. Otherwise, the request is rejected.
@@ -63,7 +66,7 @@ This project will help you setup a validation webhook to validate aws-auth confi
 - `kubectl label ns kube-system name=kube-system`
 2. Create Docker image from the Dockerfile
     ```
-    - $(aws ecr get-login --no-include-email --region us-east-1)`
+    - $(aws ecr get-login --no-include-email --region us-east-1)
     - docker build --network=host -t webhook .
     - docker tag webhook:latest 1234567.dkr.ecr.us-east-1.amazonaws.com/webhook:latest
     - docker push 1234567.dkr.ecr.us-east-1.amazonaws.com/webhook:latest
@@ -81,7 +84,7 @@ This project will help you setup a validation webhook to validate aws-auth confi
     - **Test case 2**: At a minimum, configMap should have IAM roles associated with the IAM Instance profiles attached to the worker nodes should be present in the aws-auth in addition to    any IAM roles/users specified as a comma saperated string via the ADDITIONAL_ROLES environment variable in the deployment. This applies for CREATE and UPDATE operation
     - **Test case 3**: DELETE operation is not allowed on aws-auth configMap 
     - **Test case 4**: When a request is denied, the reason should be displayed on the terminal.
-    - **Test case 5**: More verbose logging should be available in the Pod logs: kubectl logs -n kube-system -l app=aws-auth-validator -f
+    - **Test case 5**: More verbose logging should be available in the Pod logs: `kubectl logs -n kube-system -l app=aws-auth-validator -f`
 6. **PRODUCTION** - Apply the label to the aws-auth to make sure that it's detected by the webhook
     - `kubectl -n kube-system label cm aws-auth name=aws-auth`
 

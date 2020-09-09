@@ -46,6 +46,7 @@ def deployment_webhook():
         return admission_response(True, "configMap name not 'aws-auth' but has the label name=aws-auth. If this is for testing, set the TESTING env variable to 'TRUE'. If not, remove the label name=aws-auth from the configMap...Request will be allowed to pass through and will not be validated by the webhook") 
 
     admission_controller.logger.info(f"Intercepted {operation} operation on {name} configMap resource in the {namespace} namespace by {username} user")
+    
 
     # Get configMap Data
     if operation in ("CREATE","UPDATE"):
@@ -60,12 +61,19 @@ def deployment_webhook():
         CLUSTER_NAME = (os.environ['CLUSTER_NAME'])
         CLUSTER_REGION = (os.environ['CLUSTER_REGION'])
 
-        # non-mandatory env variable
+        # These roles should be present in aws-auth
         if os.getenv("ADDITIONAL_ROLES") is not None:
             ADDITIONAL_ROLES = (os.environ['ADDITIONAL_ROLES'])
             ADDITIONAL_ROLES = ADDITIONAL_ROLES.split(",")
         else:
             ADDITIONAL_ROLES = []
+
+        # These roles should not be present in aws-auth
+        if os.getenv("REJECT_ROLES") is not None:
+            REJECT_ROLES = (os.environ['REJECT_ROLES'])
+            REJECT_ROLES = REJECT_ROLES.split(",")
+        else:
+            REJECT_ROLES = []            
 
         try:
             data = str(request_info["request"]["object"]["data"]).replace('\\n', '\n').replace('\\t', '\t')
@@ -82,32 +90,37 @@ def deployment_webhook():
         else:
             admission_controller.logger.info(f"\nData from the aws-auth configMap:\n {data} \n")
 
+            # Extract ARNs from the configMap
+            aws_auth_arns = re.findall(r'(?:^|\s)(arn:aws:iam::\S*)',data)
+            aws_auth_arns = set(aws_auth_arns)
+
+            # If roles defined in the REJECT_ROLES are present in the Data section, reject the request
+            reject_roles = list(filter(None, REJECT_ROLES))     
+            for r in reject_roles:
+                if r in aws_auth_arns:
+                    admission_controller.logger.info(f"\nRole: {r} found in configMap data mapRoles and this role cannot be used as specified in REJECT_ROLES environment variable\n")             
+                    return admission_response(False, "Role: {} Not allowed in the configMap".format(r))
+
             ############################## AWS API Calls Section Begin ##############################
 
             # https://boto3.amazonaws.com/v1/documentation/api/latest/guide/retries.html
             config=Config(connect_timeout=5, read_timeout=60, retries={'max_attempts': 3})
             
-
             # Get the instances associated with a Cluster and query for IAM Instance Profile
             # Get the instances which have the Tag key - kubernetes.io/cluster/<cluster_name> with value "owned"
-            ec2_client = boto3.client('ec2', CLUSTER_REGION, config=config)
+            # https://boto3.amazonaws.com/v1/documentation/api/latest/guide/collections.html
+            # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/ec2.html#EC2.Instance.iam_instance_profile
+            ec2_client = boto3.resource('ec2', CLUSTER_REGION)
+            filters = [{
+                'Name': 'tag:kubernetes.io/cluster/{}'.format(CLUSTER_NAME),
+                'Values': ['owned']
+            }]            
             instanceProfilesList=[]
             try:
-                ec2_response = ec2_client.describe_instances(
-                    Filters=[
-                        {
-                            'Name': 'tag:kubernetes.io/cluster/{}'.format(CLUSTER_NAME),
-                            'Values': [
-                                'owned',
-                            ],
-                        },
-                    ],
-                )
-
-                for i in ec2_response['Reservations']:
-                  for j in i['Instances']:
-                    instanceProfile = str(j['IamInstanceProfile']['Arn']).split("/")[-1]
-                    instanceProfilesList.append(instanceProfile)
+                ec2_response = ec2_client.instances.filter(Filters=filters)
+                for i in ec2_response:
+                    instanceProfileName = str(i.iam_instance_profile['Arn']).split("/")[-1]
+                    instanceProfilesList.append(str(instanceProfileName))
             except Exception as ec2_error:
                 admission_controller.logger.error(f"Error while trying to get the EC2 Instance profile(s) associated with the worker node(s): {ec2_error}")
                 return admission_response(False, "Error while trying to get the EC2 Instance profile(s) associated with the worker node(s): {}".format(ec2_error))
@@ -160,8 +173,7 @@ def deployment_webhook():
             fargateRolesList=[]
             if fargateProfiles is not None:
                 try:
-                    for profile in fargateProfiles:
-                    
+                    for profile in fargateProfiles:                    
                       fargate_describe_response = fargate_client.describe_fargate_profile(
                           clusterName = CLUSTER_NAME,
                           fargateProfileName = profile
@@ -178,9 +190,7 @@ def deployment_webhook():
 
             final_roles = iamRoles + ADDITIONAL_ROLES + fargateRoles
             final_roles = list(filter(None, final_roles))
-            aws_auth_arns = re.findall(r'(?:^|\s)(arn:aws:iam::\S*)',data)
-            admission_controller.logger.info(f"Extracted ARNs from the aws-auth configMap Data section: {aws_auth_arns}")
-            aws_auth_arns = set(aws_auth_arns)
+            admission_controller.logger.info(f"Extracted ARNs from the aws-auth configMap Data section: {aws_auth_arns}")           
             for role in final_roles:
                 if role in aws_auth_arns:
                     admission_controller.logger.info(f"\n{role} entry found in configMap data mapRoles \n") 
@@ -190,12 +200,17 @@ def deployment_webhook():
                     return admission_response(False, "\n\nAll the roles not found in the aws-auth configMap.Make sure to add {} entry/entries are added in configMap data mapRoles section".format(final_roles))
             return admission_response(True, data)
     
-    # Delete operation not allowed
-    elif str(operation) in ("DELETE") and name == "aws-auth":
-        admission_controller.logger.error(f"Delete operation on {name} configMap resource in the {namespace} namespace is not allowed")
-        return admission_response(False, "Delete operation not allowed on aws-auth configMap")        
-        # For testing - comment the above 2 lines and uncomment the below one
-        # return admission_response(True, "It's a delete operation")
+    # Delete operation not allowed on aws-auth
+    elif str(operation) in ("DELETE"):
+        if name == "aws-auth":
+            admission_controller.logger.error(f"Delete operation on {name} configMap resource in the {namespace} namespace is not allowed")
+            return admission_response(False, "Delete operation not allowed on aws-auth configMap")        
+            # For testing - comment the above 2 lines and uncomment the below one
+            # return admission_response(True, "It's a delete operation")
+        else:
+           return admission_response(True, "All Good") 
+    else:
+       return admission_response(True, "All Good") 
 
 def admission_response(allowed, message):
     return jsonify({"response": {"allowed": allowed, "status": {"message": str(message)}}})
@@ -208,4 +223,3 @@ def hello():
 if __name__ == '__main__':
     admission_controller.run(host='0.0.0.0')
     #admission_controller.run(host='0.0.0.0', port=443, ssl_context=("/etc/webhook/certs/cert.pem", "/etc/webhook/certs/key.pem"))
-

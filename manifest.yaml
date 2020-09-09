@@ -34,6 +34,11 @@ spec:
             - name: ADDITIONAL_ROLES
               value: ""
 
+            # Optional parameter. Defaults to None
+            # IAM Roles defined via REJECT_ROLES environment variable in the Deployment will not be allowed in the aws-auth. This is particularly useful where a specific user/Role should be denied access and also helps in cases where cluster creator should not be defined in aws-auth as best practice. REJECT_ROLES env variable accepts comma-separated values
+            - name: REJECT_ROLES
+              value: ""
+
             # If TESTING is set to True, webhook will intercept configMaps with any name as long as it has label name=aws-auth and perform validation. This is useful if testing within kube-system namespace but you don't want to test on actual aws-auth configMap  
 
             # If TESTING is set to False, webhook will intercept configMaps with name aws-auth as long as it has label name=aws-auth and perform validation. Other configMaps that have a different name but have label name=aws-aut will be allowed to pass through without performing any validation
@@ -105,3 +110,4 @@ webhooks:
     scope: Namespaced
   sideEffects: None
   timeoutSeconds: 30
+
