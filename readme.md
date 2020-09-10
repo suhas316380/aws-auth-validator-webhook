@@ -83,9 +83,10 @@ This project will help you setup a validation webhook to validate aws-auth confi
 5. **TESTING** - Apply cm.yaml. Change values and observe the output in the Pod logs
     - **Test case 1**: configMap with empty data is not allowed. This applies for CREATE and UPDATE operation
     - **Test case 2**: At a minimum, configMap should have IAM roles associated with the IAM Instance profiles attached to the worker nodes should be present in the aws-auth in addition to    any IAM roles/users specified as a comma saperated string via the ADDITIONAL_ROLES environment variable in the deployment. This applies for CREATE and UPDATE operation
-    - **Test case 3**: DELETE operation is not allowed on aws-auth configMap 
-    - **Test case 4**: When a request is denied, the reason should be displayed on the terminal.
-    - **Test case 5**: More verbose logging should be available in the Pod logs: `kubectl logs -n kube-system -l app=aws-auth-validator -f`
+    - **Test case 3**: Roles specified in REJECT_ROLES cannot be added to the configMap
+    - **Test case 4**: DELETE operation is not allowed on aws-auth configMap 
+    - **Test case 5**: When a request is denied, the reason should be displayed on the terminal.
+    - **Test case 6**: More verbose logging should be available in the Pod logs: `kubectl logs -n kube-system -l app=aws-auth-validator -f`
 6. **PRODUCTION** - Apply the label to the aws-auth to make sure that it's detected by the webhook
     - `kubectl -n kube-system label cm aws-auth name=aws-auth`
 
