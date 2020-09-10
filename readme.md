@@ -23,7 +23,8 @@ This project will help you setup a validation webhook to validate aws-auth confi
 
 ##### Why is this useful:
 - Prevents accidental deletion/modification of the aws-auth and thus avoiding Nodes leaving the cluster or users getting locked out of the cluster
-- Ensures that workerNode IAM roles and any additional IAM roles/users specified as a comma saperated string via the ADDITIONAL_ROLES environment variable in the deployment are always present in the aws-auth configMap. Else, request is not allowed to go through.
+- Ensures that workerNode, Fargate profile IAM roles and any additional IAM roles/users specified as a comma saperated string via the ADDITIONAL_ROLES environment variable in the deployment are always present in the aws-auth configMap. Else, request is not allowed to go through.
+- Ensures that pre-specified unwanted roles don't make their way into the aws-auth which can potentially grant access to someone to the cluster or in some cases, locking out all the users
 - All the events are logged within the logs. The webhook is written in Python and all the events can be logged to a file/CW but this is TODO. 
 
 ### Explaination
