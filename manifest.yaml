@@ -19,7 +19,7 @@ spec:
       serviceAccountName: aws-auth-validator
       containers:
         - name: aws-auth-validator
-          image: 266494083958.dkr.ecr.us-east-1.amazonaws.com/webhook:latest
+          image: <your_image>
           env:
 
             # Mandatory values. Change these
@@ -32,12 +32,12 @@ spec:
             # Specify any additional Roles/IAM-users that needs to be present in the aws-auth. This will prevent those roles/users getting locked out intentionally or otherwise.
             # Accept comma-saperated values without spaces. Eg - value: "arn:aws:iam::111122223333:role/AmazonEKSFargatePodExecutionRole,arn:aws:iam::111122223333:user/ops-user"
             - name: ADDITIONAL_ROLES
-              value: ""
+              value: "arn:aws:iam::111122223333:role/testuser,arn:aws:iam::111122223333:user/ops-user"
 
             # Optional parameter. Defaults to None
             # IAM Roles defined via REJECT_ROLES environment variable in the Deployment will not be allowed in the aws-auth. This is particularly useful where a specific user/Role should be denied access and also helps in cases where cluster creator should not be defined in aws-auth as best practice. REJECT_ROLES env variable accepts comma-separated values
             - name: REJECT_ROLES
-              value: ""
+              value: "arn:aws:iam::111122223333:role/testuser1,arn:aws:iam::111122223333:user/ops-user1"
 
             # If TESTING is set to True, webhook will intercept configMaps with any name as long as it has label name=aws-auth and perform validation. This is useful if testing within kube-system namespace but you don't want to test on actual aws-auth configMap  
 
